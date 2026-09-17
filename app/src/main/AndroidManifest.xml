@@ -21,6 +21,9 @@
         android:theme="@style/AppTheme">
 
         <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <meta-data
             android:name="com.android.automotive"
             android:resource="@xml/automotive_app_desc" />
 
@@ -34,6 +37,8 @@
         </activity>
 
         <service
+            android:label="@string/app_name"
+            android:icon="@drawable/ic_launcher"
             android:name=".AutoMediaService"
             android:exported="true">
             <intent-filter>
