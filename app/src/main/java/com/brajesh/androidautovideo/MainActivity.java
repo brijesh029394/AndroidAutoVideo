@@ -3,63 +3,67 @@ package com.brajesh.androidautovideo;
 import android.app.Activity;
 import android.app.UiModeManager;
 import android.content.Context;
-import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
-    private static final String DEFAULT_VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+    private static final String DEFAULT_VIDEO_URL = "https://m.youtube.com/";
 
     private EditText videoUrlInput;
+    private LinearLayout root;
+    private WebView webView;
+    private View customVideoView;
+    private WebChromeClient.CustomViewCallback customViewCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(buildContentView());
+        loadUrl(DEFAULT_VIDEO_URL);
     }
 
     private View buildContentView() {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(Color.rgb(18, 18, 20));
-
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(24), dp(28), dp(24), dp(28));
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        scrollView.addView(root);
+        root.setPadding(dp(14), dp(14), dp(14), dp(14));
+        root.setBackgroundColor(Color.rgb(18, 18, 20));
 
         TextView title = text("Android Auto Video", 28, true);
         root.addView(title);
 
         TextView subtitle = text(
-                "Parked/passenger-safe YouTube launcher. This app does not bypass Android Auto driving restrictions.",
+                "Enter a YouTube URL and play it inside this app. Use only while parked or on a passenger-safe display.",
                 16,
                 false
         );
-        subtitle.setPadding(0, dp(12), 0, dp(20));
+        subtitle.setPadding(0, dp(8), 0, dp(12));
         root.addView(subtitle);
 
         TextView status = text(carModeText(), 15, false);
         status.setTextColor(Color.rgb(120, 210, 160));
-        status.setPadding(0, 0, 0, dp(18));
+        status.setPadding(0, 0, 0, dp(12));
         root.addView(status);
 
         videoUrlInput = new EditText(this);
-        videoUrlInput.setSingleLine(false);
-        videoUrlInput.setMinLines(2);
+        videoUrlInput.setSingleLine(true);
         videoUrlInput.setText(DEFAULT_VIDEO_URL);
-        videoUrlInput.setHint("Paste YouTube URL");
+        videoUrlInput.setHint("Paste YouTube URL or enter search text");
         videoUrlInput.setTextColor(Color.WHITE);
         videoUrlInput.setHintTextColor(Color.rgb(160, 160, 165));
         videoUrlInput.setBackgroundColor(Color.rgb(35, 35, 40));
@@ -70,43 +74,100 @@ public class MainActivity extends Activity {
         ));
 
         Button openButton = new Button(this);
-        openButton.setText("Open YouTube Video");
+        openButton.setText("Load in App Browser");
         openButton.setAllCaps(false);
         openButton.setOnClickListener(v -> openVideo());
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        buttonParams.setMargins(0, dp(18), 0, dp(18));
+        buttonParams.setMargins(0, dp(10), 0, dp(10));
         root.addView(openButton, buttonParams);
 
-        TextView note = text(
-                "Use only when the vehicle is parked or when a passenger display allows it. For driving, use audio-safe Android Auto media controls instead.",
-                14,
-                false
-        );
-        note.setTextColor(Color.rgb(210, 210, 215));
-        root.addView(note);
+        webView = new WebView(this);
+        configureWebView(webView);
+        root.addView(webView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+        ));
 
-        return scrollView;
+        return root;
     }
 
     private void openVideo() {
         String url = videoUrlInput.getText().toString().trim();
-        if (!url.startsWith("https://www.youtube.com/")
-                && !url.startsWith("https://youtu.be/")
-                && !url.startsWith("https://m.youtube.com/")) {
-            Toast.makeText(this, "Please enter a valid YouTube URL.", Toast.LENGTH_SHORT).show();
+        if (url.isEmpty()) {
+            Toast.makeText(this, "Please enter a YouTube URL or search text.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            startActivity(intent);
-        } catch (Exception exception) {
-            Toast.makeText(this, "No app found to open this video.", Toast.LENGTH_SHORT).show();
+        loadUrl(normalizeUrl(url));
+    }
+
+    private void configureWebView(WebView view) {
+        WebSettings settings = view.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setUserAgentString(settings.getUserAgentString() + " AndroidAutoVideo");
+
+        view.setBackgroundColor(Color.BLACK);
+        view.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String nextUrl = request.getUrl().toString();
+                videoUrlInput.setText(nextUrl);
+                return false;
+            }
+        });
+        view.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (customVideoView != null) {
+                    callback.onCustomViewHidden();
+                    return;
+                }
+                customVideoView = view;
+                customViewCallback = callback;
+                root.setVisibility(View.GONE);
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                getWindow().getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                );
+                addContentView(customVideoView, new ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                ));
+            }
+
+            @Override
+            public void onHideCustomView() {
+                hideCustomVideoView();
+            }
+        });
+    }
+
+    private void loadUrl(String url) {
+        videoUrlInput.setText(url);
+        webView.loadUrl(url);
+    }
+
+    private String normalizeUrl(String value) {
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            return value;
         }
+        if (value.startsWith("www.youtube.com") || value.startsWith("m.youtube.com")
+                || value.startsWith("youtube.com") || value.startsWith("youtu.be")) {
+            return "https://" + value;
+        }
+        return "https://m.youtube.com/results?search_query=" + value.replace(" ", "+");
     }
 
     private String carModeText() {
@@ -127,6 +188,58 @@ public class MainActivity extends Activity {
             view.setTypeface(view.getTypeface(), android.graphics.Typeface.BOLD);
         }
         return view;
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (customVideoView != null) {
+            hideCustomVideoView();
+            return;
+        }
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    @Override
+    protected void onPause() {
+        if (webView != null) {
+            webView.onPause();
+        }
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.onResume();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.destroy();
+        }
+        super.onDestroy();
+    }
+
+    private void hideCustomVideoView() {
+        if (customVideoView == null) {
+            return;
+        }
+        ((ViewGroup) customVideoView.getParent()).removeView(customVideoView);
+        customVideoView = null;
+        root.setVisibility(View.VISIBLE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().getDecorView().setSystemUiVisibility(0);
+        if (customViewCallback != null) {
+            customViewCallback.onCustomViewHidden();
+            customViewCallback = null;
+        }
     }
 
     private int dp(int value) {
